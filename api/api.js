@@ -1,5 +1,5 @@
 //new
-const BASE_URL = "https://anaxbacl.vercel.app/";
+const BASE_URL = "https://anaxbacl.vercel.app";
 
 export const getToken = () => localStorage.getItem("anix_token");
 export const setToken = (t) => localStorage.setItem("anix_token", t);
