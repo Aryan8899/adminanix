@@ -1,62 +1,122 @@
 import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { fetchJobs, createJob, updateJob, deleteJob } from "../../api/api";
 
 const CATEGORIES = ["Audit & Assurance", "Tax & GST", "Legal & Secretarial", "Advisory & Finance", "Operations"];
-const JOB_TYPES = ["Full-Time", "Part-Time", "Contract", "Internship"];
+const JOB_TYPES  = ["Full-Time", "Part-Time", "Contract", "Internship"];
 const WORK_MODES = ["On-Site", "Hybrid", "Remote"];
 
 const CAT_COLORS = {
-  "Audit & Assurance":  { bg: "#fff0f3", text: "#c0392b", border: "#f5c6cb" },
-  "Tax & GST":          { bg: "#fff3e0", text: "#e65100", border: "#ffcc80" },
-  "Legal & Secretarial":{ bg: "#e8f5e9", text: "#2e7d32", border: "#a5d6a7" },
-  "Advisory & Finance": { bg: "#e3f2fd", text: "#1565c0", border: "#90caf9" },
-  "Operations":         { bg: "#f3e5f5", text: "#6a1b9a", border: "#ce93d8" },
+  "Audit & Assurance":   { bg: "#fff0f3", text: "#c0392b", border: "#f5c6cb" },
+  "Tax & GST":           { bg: "#fff3e0", text: "#e65100", border: "#ffcc80" },
+  "Legal & Secretarial": { bg: "#e8f5e9", text: "#2e7d32", border: "#a5d6a7" },
+  "Advisory & Finance":  { bg: "#e3f2fd", text: "#1565c0", border: "#90caf9" },
+  "Operations":          { bg: "#f3e5f5", text: "#6a1b9a", border: "#ce93d8" },
 };
 
-const INITIAL_JOBS = [
-  { id: 1, title: "Audit Manager — Statutory & Internal", category: "Audit & Assurance", type: "Full-Time", experience: "3–6 Years Experience", location: "Gurugram, Haryana", mode: "Hybrid", qualification: "CA Qualified Preferred", description: "" },
-  { id: 2, title: "GST & Indirect Tax Executive", category: "Tax & GST", type: "Full-Time", experience: "1–3 Years Experience", location: "Gurugram, Haryana", mode: "On-Site", qualification: "B.Com / CA Inter / CA Final", description: "" },
-  { id: 3, title: "Senior Income Tax & Litigation Associate", category: "Tax & GST", type: "Full-Time", experience: "3–7 Years Experience", location: "Gurugram, Haryana", mode: "Hybrid", qualification: "CA Qualified Required", description: "" },
-  { id: 4, title: "Company Secretary — Corporate Compliance", category: "Legal & Secretarial", type: "Full-Time", experience: "2–5 Years Experience", location: "Gurugram, Haryana", mode: "On-Site", qualification: "CS (Qualified) — ICSI Member", description: "" },
-  { id: 5, title: "Financial Analyst — Valuation & Project Reports", category: "Advisory & Finance", type: "Full-Time", experience: "2–4 Years Experience", location: "Gurugram, Haryana", mode: "Hybrid", qualification: "CA / MBA Finance", description: "" },
-];
+const emptyForm = {
+  title: "", category: CATEGORIES[0], jobType: JOB_TYPES[0],
+  experience: "", location: "Gurugram, Haryana", workMode: WORK_MODES[0],
+  qualification: "", description: "",
+};
 
-const emptyForm = { title: "", category: CATEGORIES[0], type: JOB_TYPES[0], experience: "", location: "Gurugram, Haryana", mode: WORK_MODES[0], qualification: "", description: "" };
+// map DB field names → form field names
+const jobToForm = (job) => ({
+  title:         job.title,
+  category:      job.category,
+  jobType:       job.jobType,
+  experience:    job.experience,
+  location:      job.location,
+  workMode:      job.workMode,
+  qualification: job.qualification,
+  description:   job.description || "",
+});
 
 export default function Dashboard({ onLogout }) {
-  const [jobs, setJobs] = useState(INITIAL_JOBS);
-  const [tab, setTab] = useState("jobs"); // "jobs" | "add"
+  const qc = useQueryClient();
+
+  const [tab,       setTab]       = useState("jobs");
   const [filterCat, setFilterCat] = useState("All Roles");
-  const [form, setForm] = useState(emptyForm);
-  const [editJob, setEditJob] = useState(null);
-  const [deleteId, setDeleteId] = useState(null);
-  const [toast, setToast] = useState("");
+  const [form,      setForm]      = useState(emptyForm);
+  const [editJob,   setEditJob]   = useState(null);   // full job object or null
+  const [deleteId,  setDeleteId]  = useState(null);
+  const [toast,     setToast]     = useState("");
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
 
+  // ── Queries ───────────────────────────────────────────────────
+  const { data: jobs = [], isLoading, isError } = useQuery({
+    queryKey: ["jobs"],
+    queryFn: fetchJobs,
+    staleTime: 30_000,
+  });
+
+  // ── Mutations ─────────────────────────────────────────────────
+  const createMutation = useMutation({
+    mutationFn: createJob,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      showToast("Job posted successfully!");
+      setForm(emptyForm);
+      setTab("jobs");
+    },
+    onError: (err) => showToast(`Error: ${err.message}`),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: updateJob,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      showToast("Job updated successfully!");
+      setForm(emptyForm);
+      setEditJob(null);
+      setTab("jobs");
+    },
+    onError: (err) => showToast(`Error: ${err.message}`),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteJob,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      setDeleteId(null);
+      showToast("Job deleted.");
+    },
+    onError: (err) => showToast(`Error: ${err.message}`),
+  });
+
+  // ── Handlers ──────────────────────────────────────────────────
   const handleSubmit = () => {
     if (!form.title.trim() || !form.experience.trim() || !form.qualification.trim()) return;
     if (editJob) {
-      setJobs(jobs.map(j => j.id === editJob.id ? { ...form, id: editJob.id } : j));
-      showToast("Job updated successfully!");
-      setEditJob(null);
+      updateMutation.mutate({ id: editJob._id, ...form });
     } else {
-      setJobs([{ ...form, id: Date.now() }, ...jobs]);
-      showToast("Job posted successfully!");
+      createMutation.mutate(form);
     }
+  };
+
+  const startEdit = (job) => {
+    setForm(jobToForm(job));
+    setEditJob(job);
+    setTab("add");
+  };
+
+  const cancelForm = () => {
     setForm(emptyForm);
+    setEditJob(null);
     setTab("jobs");
   };
 
-  const startEdit = (job) => { setForm({ ...job }); setEditJob(job); setTab("add"); };
-  const cancelForm = () => { setForm(emptyForm); setEditJob(null); setTab("jobs"); };
-  const confirmDelete = () => { setJobs(jobs.filter(j => j.id !== deleteId)); setDeleteId(null); showToast("Job deleted."); };
+  const filtered = filterCat === "All Roles"
+    ? jobs
+    : jobs.filter(j => j.category === filterCat);
 
-  const filtered = filterCat === "All Roles" ? jobs : jobs.filter(j => j.category === filterCat);
+  const isBusy = createMutation.isPending || updateMutation.isPending;
 
   return (
     <div style={{ minHeight: "100vh", background: "#fdf5f6", fontFamily: "'Georgia', serif", display: "flex" }}>
 
-      {/* ── Sidebar ── */}
+      {/* ── Sidebar ─────────────────────────────────────────────── */}
       <aside style={{
         width: 230, background: "#fff", borderRight: "1px solid #f0d8db",
         display: "flex", flexDirection: "column", padding: "28px 0",
@@ -74,10 +134,10 @@ export default function Dashboard({ onLogout }) {
         <nav style={{ flex: 1, padding: "18px 10px" }}>
           {[
             { id: "jobs", icon: "📋", label: "All Job Posts", badge: jobs.length },
-            { id: "add", icon: editJob ? "✏️" : "➕", label: editJob ? "Edit Job" : "Add New Job" },
+            { id: "add",  icon: editJob ? "✏️" : "➕", label: editJob ? "Edit Job" : "Add New Job" },
           ].map(item => (
             <button key={item.id}
-              onClick={() => { if (item.id === "jobs") cancelForm(); else setTab("add"); }}
+              onClick={() => item.id === "jobs" ? cancelForm() : setTab("add")}
               style={{
                 width: "100%", textAlign: "left", padding: "11px 14px", borderRadius: 9,
                 border: "none", background: tab === item.id ? "#fdf0f2" : "transparent",
@@ -104,7 +164,7 @@ export default function Dashboard({ onLogout }) {
         </div>
       </aside>
 
-      {/* ── Main ── */}
+      {/* ── Main ────────────────────────────────────────────────── */}
       <main style={{ flex: 1, padding: "36px 40px", overflowY: "auto" }}>
 
         {/* Toast */}
@@ -116,7 +176,7 @@ export default function Dashboard({ onLogout }) {
           }}>✓ {toast}</div>
         )}
 
-        {/* ── JOBS LIST ── */}
+        {/* ── JOBS LIST ─────────────────────────────────────────── */}
         {tab === "jobs" && (
           <>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28 }}>
@@ -148,58 +208,74 @@ export default function Dashboard({ onLogout }) {
               ))}
             </div>
 
+            {/* States */}
+            {isLoading && (
+              <div style={{ textAlign: "center", padding: 60, color: "#d1495b", fontSize: 15 }}>
+                Loading jobs...
+              </div>
+            )}
+            {isError && (
+              <div style={{ textAlign: "center", padding: 60, color: "#c0392b", fontSize: 15 }}>
+                Failed to load jobs. Check your connection.
+              </div>
+            )}
+
             {/* Job cards */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {filtered.map(job => {
-                const cc = CAT_COLORS[job.category] || CAT_COLORS["Operations"];
-                return (
-                  <div key={job.id} style={{
-                    background: "#fff", borderRadius: 14, padding: "20px 24px",
-                    border: "1px solid #f5e0e3", display: "flex", alignItems: "center",
-                    justifyContent: "space-between", gap: 16,
-                    boxShadow: "0 2px 12px rgba(209,73,91,0.05)"
-                  }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center", flexWrap: "wrap" }}>
-                        <span style={{ background: cc.bg, color: cc.text, border: `1px solid ${cc.border}`, fontSize: 11, padding: "3px 11px", borderRadius: 20, fontWeight: 700 }}>{job.category}</span>
-                        <span style={{ background: "#f5f5f5", color: "#888", fontSize: 11, padding: "3px 11px", borderRadius: 20 }}>{job.type}</span>
+            {!isLoading && !isError && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {filtered.map(job => {
+                  const cc = CAT_COLORS[job.category] || CAT_COLORS["Operations"];
+                  return (
+                    <div key={job._id} style={{
+                      background: "#fff", borderRadius: 14, padding: "20px 24px",
+                      border: "1px solid #f5e0e3", display: "flex", alignItems: "center",
+                      justifyContent: "space-between", gap: 16,
+                      boxShadow: "0 2px 12px rgba(209,73,91,0.05)"
+                    }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center", flexWrap: "wrap" }}>
+                          <span style={{ background: cc.bg, color: cc.text, border: `1px solid ${cc.border}`, fontSize: 11, padding: "3px 11px", borderRadius: 20, fontWeight: 700 }}>{job.category}</span>
+                          <span style={{ background: "#f5f5f5", color: "#888", fontSize: 11, padding: "3px 11px", borderRadius: 20 }}>{job.jobType}</span>
+                        </div>
+                        <div style={{ fontWeight: 700, fontSize: 16, color: "#1a1a1a", marginBottom: 7 }}>{job.title}</div>
+                        <div style={{ display: "flex", gap: 18, fontSize: 12, color: "#aaa", flexWrap: "wrap" }}>
+                          <span>⏱ {job.experience}</span>
+                          <span>📍 {job.location} ({job.workMode})</span>
+                          <span>🎓 {job.qualification}</span>
+                        </div>
                       </div>
-                      <div style={{ fontWeight: 700, fontSize: 16, color: "#1a1a1a", marginBottom: 7 }}>{job.title}</div>
-                      <div style={{ display: "flex", gap: 18, fontSize: 12, color: "#aaa", flexWrap: "wrap" }}>
-                        <span>⏱ {job.experience}</span>
-                        <span>📍 {job.location} ({job.mode})</span>
-                        <span>🎓 {job.qualification}</span>
+                      <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                        <button onClick={() => startEdit(job)} style={{
+                          padding: "8px 16px", border: "1.5px solid #f0d0d5", borderRadius: 8,
+                          background: "#fff", color: "#d1495b", fontSize: 13,
+                          cursor: "pointer", fontFamily: "inherit", fontWeight: 600
+                        }}>Edit</button>
+                        <button onClick={() => setDeleteId(job._id)} style={{
+                          padding: "8px 16px", border: "1.5px solid #ffd0d0", borderRadius: 8,
+                          background: "#fff5f5", color: "#c0392b", fontSize: 13, cursor: "pointer", fontFamily: "inherit"
+                        }}>Delete</button>
                       </div>
                     </div>
-                    <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                      <button onClick={() => startEdit(job)} style={{
-                        padding: "8px 16px", border: "1.5px solid #f0d0d5", borderRadius: 8,
-                        background: "#fff", color: "#d1495b", fontSize: 13,
-                        cursor: "pointer", fontFamily: "inherit", fontWeight: 600
-                      }}>Edit</button>
-                      <button onClick={() => setDeleteId(job.id)} style={{
-                        padding: "8px 16px", border: "1.5px solid #ffd0d0", borderRadius: 8,
-                        background: "#fff5f5", color: "#c0392b", fontSize: 13, cursor: "pointer", fontFamily: "inherit"
-                      }}>Delete</button>
-                    </div>
+                  );
+                })}
+                {filtered.length === 0 && (
+                  <div style={{ textAlign: "center", padding: 60, color: "#ddd", fontSize: 16 }}>
+                    No jobs in this category.
                   </div>
-                );
-              })}
-              {filtered.length === 0 && (
-                <div style={{ textAlign: "center", padding: 60, color: "#ddd", fontSize: 16 }}>
-                  No jobs in this category.
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </>
         )}
 
-        {/* ── ADD / EDIT FORM ── */}
+        {/* ── ADD / EDIT FORM ───────────────────────────────────── */}
         {tab === "add" && (
           <>
             <div style={{ marginBottom: 28 }}>
               <h1 style={{ margin: 0, fontSize: 30, color: "#1a1a1a", fontWeight: 700 }}>
-                {editJob ? <>Edit <span style={{ color: "#d1495b", fontStyle: "italic" }}>Job Post</span></> : <>Add <span style={{ color: "#d1495b", fontStyle: "italic" }}>New Job</span></>}
+                {editJob
+                  ? <>Edit <span style={{ color: "#d1495b", fontStyle: "italic" }}>Job Post</span></>
+                  : <>Add <span style={{ color: "#d1495b", fontStyle: "italic" }}>New Job</span></>}
               </h1>
               <p style={{ margin: "6px 0 0", color: "#999", fontSize: 14 }}>
                 {editJob ? "Update the details below and save." : "Fill in the details to publish a new opportunity."}
@@ -223,7 +299,7 @@ export default function Dashboard({ onLogout }) {
                   </select>
                 </Field>
                 <Field label="Job Type">
-                  <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} style={iStyle}>
+                  <select value={form.jobType} onChange={e => setForm({ ...form, jobType: e.target.value })} style={iStyle}>
                     {JOB_TYPES.map(t => <option key={t}>{t}</option>)}
                   </select>
                 </Field>
@@ -235,7 +311,7 @@ export default function Dashboard({ onLogout }) {
                     placeholder="e.g. 3–6 Years Experience" style={iStyle} />
                 </Field>
                 <Field label="Work Mode">
-                  <select value={form.mode} onChange={e => setForm({ ...form, mode: e.target.value })} style={iStyle}>
+                  <select value={form.workMode} onChange={e => setForm({ ...form, workMode: e.target.value })} style={iStyle}>
                     {WORK_MODES.map(m => <option key={m}>{m}</option>)}
                   </select>
                 </Field>
@@ -258,11 +334,12 @@ export default function Dashboard({ onLogout }) {
               </Field>
 
               <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
-                <button onClick={handleSubmit} style={{
-                  padding: "13px 34px", background: "#d1495b", color: "#fff", border: "none",
-                  borderRadius: 11, fontSize: 15, fontWeight: 700, cursor: "pointer", fontFamily: "inherit"
+                <button onClick={handleSubmit} disabled={isBusy} style={{
+                  padding: "13px 34px", background: isBusy ? "#e8949e" : "#d1495b", color: "#fff",
+                  border: "none", borderRadius: 11, fontSize: 15, fontWeight: 700,
+                  cursor: isBusy ? "not-allowed" : "pointer", fontFamily: "inherit"
                 }}>
-                  {editJob ? "Update Job →" : "Post Job →"}
+                  {isBusy ? "Saving..." : editJob ? "Update Job →" : "Post Job →"}
                 </button>
                 <button onClick={cancelForm} style={{
                   padding: "13px 24px", background: "transparent", color: "#aaa",
@@ -275,7 +352,7 @@ export default function Dashboard({ onLogout }) {
         )}
       </main>
 
-      {/* ── Delete Modal ── */}
+      {/* ── Delete Modal ──────────────────────────────────────────── */}
       {deleteId && (
         <div style={{
           position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)",
@@ -289,10 +366,16 @@ export default function Dashboard({ onLogout }) {
             <h3 style={{ margin: "0 0 10px", fontSize: 20, color: "#1a1a1a" }}>Delete this job?</h3>
             <p style={{ color: "#aaa", fontSize: 14, marginBottom: 26 }}>This action cannot be undone.</p>
             <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
-              <button onClick={confirmDelete} style={{
-                padding: "11px 26px", background: "#d1495b", color: "#fff",
-                border: "none", borderRadius: 9, fontSize: 14, fontWeight: 700, cursor: "pointer"
-              }}>Yes, Delete</button>
+              <button
+                onClick={() => deleteMutation.mutate(deleteId)}
+                disabled={deleteMutation.isPending}
+                style={{
+                  padding: "11px 26px", background: "#d1495b", color: "#fff",
+                  border: "none", borderRadius: 9, fontSize: 14, fontWeight: 700,
+                  cursor: deleteMutation.isPending ? "not-allowed" : "pointer"
+                }}>
+                {deleteMutation.isPending ? "Deleting..." : "Yes, Delete"}
+              </button>
               <button onClick={() => setDeleteId(null)} style={{
                 padding: "11px 22px", background: "#f5f5f5", color: "#666",
                 border: "none", borderRadius: 9, fontSize: 14, cursor: "pointer"
@@ -305,7 +388,6 @@ export default function Dashboard({ onLogout }) {
   );
 }
 
-// Small helper wrapper
 function Field({ label, children }) {
   return (
     <div style={{ marginBottom: 22 }}>
