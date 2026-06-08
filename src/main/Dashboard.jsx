@@ -106,10 +106,13 @@ export default function Dashboard({ onLogout }) {
     setEditJob(null);
     setTab("jobs");
   };
+const activeJobs = jobs.filter(j => j.isActive);  // ← yeh add kar
 
   const filtered = filterCat === "All Roles"
     ? jobs
     : jobs.filter(j => j.category === filterCat);
+
+    
 
   const isBusy = createMutation.isPending || updateMutation.isPending;
 
@@ -133,7 +136,8 @@ export default function Dashboard({ onLogout }) {
 
         <nav style={{ flex: 1, padding: "18px 10px" }}>
           {[
-            { id: "jobs", icon: "📋", label: "All Job Posts", badge: jobs.length },
+            { id: "jobs", icon: "📋", label: "All Job Posts", badge: activeJobs.length },
+
             { id: "add",  icon: editJob ? "✏️" : "➕", label: editJob ? "Edit Job" : "Add New Job" },
           ].map(item => (
             <button key={item.id}

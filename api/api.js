@@ -24,7 +24,7 @@ export const loginAdmin = async ({ username, password }) => {
 
 // ── Jobs ──────────────────────────────────────────────────────────
 export const fetchJobs = async () => {
-  const res = await fetch(`${BASE_URL}/api/jobs/admin/all`, {
+  const res = await fetch(`${BASE_URL}/api/jobs/admin/all?t=${Date.now()}`, {
     headers: authHeaders(),
   });
   const data = await res.json();
